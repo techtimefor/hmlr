@@ -12,52 +12,27 @@ DATE_TAG=$(date +%Y%m%d)
 HMLR_NAME="Hannah Montana Linux Revived"
 UBUNTU_CODENAME="noble"
 
-# --- 2. Staging & Permission Cleanup ---
-echo "Cleaning staging area (Sudo required for Docker-created root files)..."
+# --- 2. Staging & Directory Setup ---
+echo "Cleaning and staging build environment..."
 sudo rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
-# Copy base live-build structure from current folder to build folder
 [ -d "$SOURCE_DIR" ] && cp -r "$SOURCE_DIR/." "$BUILD_DIR/"
 
 CHROOT="$BUILD_DIR/config/includes.chroot"
 mkdir -p "$CHROOT/etc/skel/.trinity/share/config" \
          "$CHROOT/opt/trinity/share/apps/kdm/themes" \
          "$CHROOT/opt/trinity/share/icons" \
+         "$CHROOT/usr/share/wallpapers" \
          "$CHROOT/usr/share/pixmaps" \
          "$CHROOT/etc/default" \
          "$CHROOT/usr/share/ubiquity/pixmaps" \
          "$CHROOT/usr/lib"
 
-# --- 3. Asset Extraction & Mapping ---
-echo "Extracting and Mapping Purple Assets..."
-TEMP_EXTRACT=$(mktemp -d)
+# --- 3. Identity Files (OS-Release & LSB-Release) ---
+echo "Writing OS Identity (os-release, lsb-release)..."
 
-# Unpacking the original archives
-tar -xJf "$DATA_DIR/icons.tar.xz" -C "$TEMP_EXTRACT/"
-tar -xzf "$DATA_DIR/skel.tar.gz" -C "$TEMP_EXTRACT/"
-
-# Move icons and kdm themes using find to handle any internal folder structure
-find "$TEMP_EXTRACT" -type d -name "hannah_montana" -path "*/icons/*" -exec cp -r {} "$CHROOT/opt/trinity/share/icons/" \;
-find "$TEMP_EXTRACT" -type d -name "hannah_montana" -path "*/kdm/themes/*" -exec cp -r {} "$CHROOT/opt/trinity/share/apps/kdm/themes/" \;
-
-# Copy Main Wallpaper/Logo
-cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
-
-# Installer Slideshow (Ubiquity) - Mapping your wallpapers to the installer backgrounds
-cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_1.png"
-cp "$DATA_DIR/wallpapers/hannah_montana_2.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_2.png"
-cp "$DATA_DIR/wallpapers/hannah_montana_3.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_3.png"
-
-# Migrate KDE configs to Trinity skeleton
-KDE_SRC=$(find "$TEMP_EXTRACT" -type d -name ".kde" | head -n 1)
-[ -n "$KDE_SRC" ] && cp -r "$KDE_SRC/." "$CHROOT/etc/skel/.trinity/"
-
-rm -rf "$TEMP_EXTRACT"
-
-# --- 4. Identity, Screenfetch & VLC Desktop Defaults ---
-echo "Writing Identity files and Bashrc..."
-
+# LSB-Release
 cat <<EOF > "$CHROOT/etc/lsb-release"
 DISTRIB_ID=HMLR
 DISTRIB_RELEASE=2026.1
@@ -65,42 +40,73 @@ DISTRIB_CODENAME=$UBUNTU_CODENAME
 DISTRIB_DESCRIPTION="$HMLR_NAME"
 EOF
 
+# OS-Release 
 cat <<EOF > "$CHROOT/etc/os-release"
 PRETTY_NAME="$HMLR_NAME (24.04 LTS)"
 NAME="$HMLR_NAME"
+VERSION_ID="2026.1"
+VERSION="2026.1 (Noble)"
 ID=hmlr
 ID_LIKE=ubuntu
+HOME_URL="https://github.com/TechTimeFor/HMLR"
+SUPPORT_URL="https://github.com/TechTimeFor/HMLR"
+BUG_REPORT_URL="https://github.com/TechTimeFor/HMLR"
+PRIVACY_POLICY_URL="https://github.com/TechTimeFor/HMLR"
+VERSION_CODENAME=$UBUNTU_CODENAME
+UBUNTU_CODENAME=$UBUNTU_CODENAME
 LOGO=hannah-montana-logo
 EOF
+
+# Copy to usr/lib as well for modern systemd compatibility
 cp "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
 
-# Enable Screenfetch auto-start in Bash
-echo "alias ls='ls --color=auto'" >> "$CHROOT/etc/skel/.bashrc"
-echo "screenfetch" >> "$CHROOT/etc/skel/.bashrc"
+# --- 4. Assets & Wallpaper Automation ---
+echo "Mapping Wallpapers and Assets..."
+cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/wallpapers/hmlr_default.png"
+cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
 
-# Set Ubiquity installer name
+# Force Trinity to use this wallpaper by default
+cat <<EOF > "$CHROOT/etc/skel/.trinity/share/config/kickerrc"
+[Background]
+Wallpaper=/usr/share/wallpapers/hmlr_default.png
+WallpaperMode=Scaled
+EOF
+
+# Mapping Installer Slideshow
+cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_1.png"
+cp "$DATA_DIR/wallpapers/hannah_montana_2.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_2.png"
+cp "$DATA_DIR/wallpapers/hannah_montana_3.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_3.png"
+
+# Setup Screenfetch auto-run
+echo "screenfetch" >> "$CHROOT/etc/skel/.bashrc"
 echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 
 # --- 5. Dockerized Build ---
-echo "Starting Docker Build (Trinity R14.1.x + VLC)..."
+echo "Starting Docker Build Process..."
+
+
 
 docker run --privileged --rm \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
     -w /build \
     ubuntu:noble /bin/bash -c "
-        apt-get update && \
-        apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux ubiquity-casper casper && \
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update && apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux \
+        ubiquity-casper casper libterm-readline-gnu-perl && \
         
-        # 1. Setup Trinity Repo with required deps
+        # 1. Setup Trinity Repo
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         
-        # 2. Official Keyring Installation (As per Trinity instructions)
-        mkdir -p config/packages.chroot
-        wget http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.deb -P config/packages.chroot/
+        # 2. GPG Key Fix (Force trust so it doesn't fail on InRelease)
+        wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
 
-        # 3. lb config (Setting Ubuntu Noble mode)
+        # 3. Keyring Package Fix (Local installation)
+        mkdir -p config/packages.chroot
+        wget http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.deb -O config/packages.chroot/trinity-keyring_all.deb
+
+        # 4. lb config
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -112,17 +118,21 @@ docker run --privileged --rm \
             --bootloader syslinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 4. Package List (Trinity + VLC + System Utilities)
+        # 5. Package List (Trinity + VLC + System Utilities)
         mkdir -p config/package-lists
         echo 'tde-trinity kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk casper network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
-        # 5. Execute ISO Build
-        lb clean && lb build || exit 1
+        # 6. Execute Build
+        lb clean && lb build
         
-        # 6. Export result
-        mv *.iso /output/hmlr-revived-$DATE_TAG.iso
+        # Export logic
+        if ls *.iso 1> /dev/null 2>&1; then
+            mv *.iso /output/hmlr-revived-$DATE_TAG.iso
+        else
+            echo 'ERROR: ISO build failed.'
+            exit 1
+        fi
     "
 
-# --- 6. Cleanup ---
 sudo rm -rf "$BUILD_DIR"
-echo "Build Successful! Find your ISO in: $OUTPUT_DIR"
+echo "Process Complete! Your ISO is ready."
