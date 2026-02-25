@@ -1,0 +1,11 @@
+# This is not really a .desktop file like the rest, but it is useful to treat
+# it as such
+
+[KdmGreeterTheme]
+Greeter=hannah_montana.xml
+Name=Hannah Montana Linux
+Description=Hannah Montana Linux Team
+Author=Hannah Montana Linux Project
+Copyright=(c) 2009 
+Screenshot=screenshot.png
+X-Ubuntu-Gettext-Domain=desktop_kdebase-workspace
