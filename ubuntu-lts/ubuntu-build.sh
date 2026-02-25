@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# --- 1. Configuration & Paths ---
+# --- 1. Configuration ---
 SOURCE_DIR="ubuntu-lts"
-BUILD_DIR="../build"
-OUTPUT_DIR="../output"
-DATA_DIR="original_hml_data"
+BUILD_DIR="$(pwd)/../build"
+OUTPUT_DIR="$(pwd)/../output"
+DATA_DIR="$(pwd)/original_hml_data"
 DATE_TAG=$(date +%Y%m%d)
 
 # Branding Variables
@@ -13,72 +13,52 @@ HMLR_VER="2026.1"
 UBUNTU_VER="24.04.4"
 UBUNTU_CODENAME="noble"
 
-# --- 2. Sanity Checks ---
-if ! command -v docker &> /dev/null; then
-    echo "ERROR: 'docker' command not found. Please install docker or run 'sudo apt install docker.io'."
-    exit 1
-fi
+# --- 2. Clean Staging Area ---
+echo "Cleaning staging area (Sudo required for Docker cleanup)..."
+sudo rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
-# --- 3. Clean Staging Area ---
-echo "Staging environment in $BUILD_DIR..."
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-mkdir -p "$OUTPUT_DIR"
-
-if [ -d "$SOURCE_DIR" ]; then cp -r "$SOURCE_DIR/." "$BUILD_DIR/"; fi
+# Copy base structure
+[ -d "$SOURCE_DIR" ] && cp -r "$SOURCE_DIR/." "$BUILD_DIR/"
 
 CHROOT="$BUILD_DIR/config/includes.chroot"
+mkdir -p "$CHROOT/etc"
 mkdir -p "$CHROOT/etc/skel/.trinity/share/config"
 mkdir -p "$CHROOT/opt/trinity/share/apps/kdm/themes"
-mkdir -p "$CHROOT/opt/trinity/share/apps/ksplash/Themes"
 mkdir -p "$CHROOT/opt/trinity/share/icons"
-mkdir -p "$CHROOT/opt/trinity/share/wallpapers"
 mkdir -p "$CHROOT/usr/share/pixmaps"
-mkdir -p "$CHROOT/usr/lib"
 mkdir -p "$CHROOT/etc/fastfetch"
+mkdir -p "$CHROOT/usr/lib"
 
-# --- 4. Asset Extraction & Smart Mapping ---
-echo "Extracting and re-mapping assets for Trinity..."
+# --- 3. Asset Extraction & Trinity Mapping ---
+echo "Extracting Purple Assets..."
 TEMP_EXTRACT=$(mktemp -d)
-
-# Unpack everything to the temp dir
 tar -xJf "$DATA_DIR/icons.tar.xz" -C "$TEMP_EXTRACT/"
 tar -xzf "$DATA_DIR/skel.tar.gz" -C "$TEMP_EXTRACT/"
-chmod -R 755 "$TEMP_EXTRACT"
 
-# SMART FIND: Search for the folders instead of assuming path
-echo "Locating hannah_montana asset folders..."
-
-# Find and copy Icons
+# Map using find to ensure we catch folders regardless of archive structure
 find "$TEMP_EXTRACT" -type d -name "hannah_montana" -path "*/icons/*" -exec cp -r {} "$CHROOT/opt/trinity/share/icons/" \;
-
-# Find and copy KDM Theme
 find "$TEMP_EXTRACT" -type d -name "hannah_montana" -path "*/kdm/themes/*" -exec cp -r {} "$CHROOT/opt/trinity/share/apps/kdm/themes/" \;
+find "$TEMP_EXTRACT" -name "hannah_montana_1.png" -exec cp {} "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png" \;
 
-# Find and copy KSplash Theme
-find "$TEMP_EXTRACT" -type d -name "hannah_montana" -path "*/ksplash/*" -exec cp -r {} "$CHROOT/opt/trinity/share/apps/ksplash/Themes/" \;
-
-# Find Wallpapers (Look for any .png or .jpg in a wallpaper folder)
-find "$TEMP_EXTRACT" -type d -name "wallpapers" -exec cp -r {}/ "$CHROOT/opt/trinity/share/" \;
-
-# Rice/Configs: Find .kde and merge it
-KDE_DIR=$(find "$TEMP_EXTRACT" -type d -name ".kde" | head -n 1)
-if [ -n "$KDE_DIR" ]; then
-    cp -r "$KDE_DIR/." "$CHROOT/etc/skel/.trinity/"
-fi
-
-# Logo Injection (Checking common naming)
-LOGO_SRC=$(find "$TEMP_EXTRACT" -name "hannah_montana_1.png" | head -n 1)
-if [ -f "$LOGO_SRC" ]; then
-    cp "$LOGO_SRC" "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
-    chmod 644 "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
-fi
+# Config Migration (.kde -> .trinity)
+KDE_SRC=$(find "$TEMP_EXTRACT" -type d -name ".kde" | head -n 1)
+[ -n "$KDE_SRC" ] && cp -r "$KDE_SRC/." "$CHROOT/etc/skel/.trinity/"
 
 rm -rf "$TEMP_EXTRACT"
 
-# --- 5. Branding (OS-Release, LSB, Fastfetch) ---
-echo "Applying Purple Branding..."
+# --- 4. Branding (OS-Release, LSB, Installer) ---
+echo "Writing Identity files (lsb-release, casper, fastfetch)..."
 
+# LSB-Release (Fixes the 'Missing' issue)
+cat <<EOF > "$CHROOT/etc/lsb-release"
+DISTRIB_ID=HMLR
+DISTRIB_RELEASE=$UBUNTU_VER
+DISTRIB_CODENAME=$UBUNTU_CODENAME
+DISTRIB_DESCRIPTION="$HMLR_NAME"
+EOF
+
+# OS-Release
 cat <<EOF > "$CHROOT/etc/os-release"
 PRETTY_NAME="$HMLR_NAME ($UBUNTU_VER LTS)"
 NAME="$HMLR_NAME"
@@ -89,56 +69,76 @@ LOGO=hannah-montana-logo
 EOF
 cp "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
 
-cat <<EOF > "$CHROOT/etc/lsb-release"
-DISTRIB_ID=HMLR
-DISTRIB_RELEASE=$UBUNTU_VER
-DISTRIB_DESCRIPTION="$HMLR_NAME $HMLR_VER"
+# Live User Configuration (Casper)
+cat <<EOF > "$CHROOT/etc/casper.conf"
+export USERNAME="hannah"
+export USERFULLNAME="Hannah Montana"
+export HOST="hannah-montana-pc"
+export BUILD_SYSTEM="Ubuntu"
 EOF
 
+# Fastfetch (Purple override)
 cat <<EOF > "$CHROOT/etc/fastfetch/config.jsonc"
 {
-    "\$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
     "logo": { "type": "builtin", "source": "ubuntu", "color": { "1": "magenta", "2": "magenta" } },
     "display": { "color": "magenta" },
     "modules": [ "title", "separator", "os", "de", "uptime", "packages", "memory" ]
 }
 EOF
 
-# --- 6. Repository & Package Lists ---
-mkdir -p "$BUILD_DIR/config/archives"
-cat <<EOF > "$BUILD_DIR/config/archives/trinity.list.chroot"
-deb http://mirror.ppa.trinitydesktop.org/trinity/deb/noble noble main
-deb http://mirror.ppa.trinitydesktop.org/trinity/deb/noble-deps noble main
+# --- 5. Installer Configuration (Ubiquity Seeding) ---
+mkdir -p "$CHROOT/etc/default"
+cat <<EOF > "$CHROOT/etc/default/ubiquity"
+# Custom Branding for HMLR
+export UBUNTU_RELEASE="$HMLR_NAME"
 EOF
 
-mkdir -p "$BUILD_DIR/config/package-lists"
-cat <<EOF > "$BUILD_DIR/config/package-lists/hmlr.list.chroot"
-tde-trinity
-tdm-trinity
-tkgoodies-trinity
-fastfetch
-xorriso
-squashfs-tools
-isolinux
-EOF
-
-# --- 7. Docker Build ---
-echo "Starting Docker Build..."
+# --- 6. Dockerized ISO Build ---
+echo "Starting Docker Build for Noble..."
 docker run --privileged --rm \
-    -v "$(pwd)/$BUILD_DIR:/build" \
-    -v "$(pwd)/$OUTPUT_DIR:/output" \
+    -v "$BUILD_DIR:/build" \
+    -v "$OUTPUT_DIR:/output" \
     -w /build \
     ubuntu:noble /bin/bash -c "
         apt-get update && \
-        apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux && \
+        apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux ubiquity-casper casper && \
+        
+        # 1. Trinity Keyring Setup
         wget http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.deb && \
         mkdir -p config/packages.chroot && \
         cp trinity-keyring.deb config/packages.chroot/ && \
-        lb clean && \
-        lb config --binary-images iso-hybrid --iso-application 'HMLR' && \
-        lb build && \
-        mv *.iso /output/hmlr-ubuntu-$DATE_TAG.iso"
 
-# --- 8. Cleanup ---
-rm -rf "$BUILD_DIR"
-echo "Done! ISO is in $OUTPUT_DIR"
+        # 2. lb config - Explicitly setting Ubuntu Mode
+        lb config \
+            --mode ubuntu \
+            --distribution $UBUNTU_CODENAME \
+            --parent-distribution $UBUNTU_CODENAME \
+            --parent-mirror-binary http://archive.ubuntu.com/ubuntu/ \
+            --mirror-binary http://archive.ubuntu.com/ubuntu/ \
+            --architectures amd64 \
+            --linux-flavours generic \
+            --binary-images iso-hybrid \
+            --iso-application '$HMLR_NAME' \
+            --iso-publisher 'TechTimeFor' \
+            --bootloader syslinux \
+            --archive-areas 'main restricted universe multiverse'
+
+        # 3. Inject Trinity Repos
+        mkdir -p config/archives
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/noble noble main' > config/archives/trinity.list.chroot
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/noble-deps noble main' >> config/archives/trinity.list.chroot
+
+        # 4. Final Package List (Everything needed for a working desktop)
+        mkdir -p config/package-lists
+        echo 'tde-trinity tdm-trinity fastfetch ubiquity ubiquity-frontend-gtk casper network-manager' > config/package-lists/hmlr.list.chroot
+
+        # 5. Execute Build
+        lb clean && lb build
+        
+        # 6. Export result
+        mv *.iso /output/hmlr-ubuntu-noble-$DATE_TAG.iso
+    "
+
+# --- 7. Final Cleanup ---
+sudo rm -rf "$BUILD_DIR"
+echo "Build Successful! ISO moved to ../output"
