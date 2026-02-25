@@ -1,0 +1,9 @@
+[KSplash Theme: hannah_montana]
+Name = Hannah Montana Linux
+Description = Hannah Montana Linux Splash Screen
+Version = 1.0
+Author = Hannah Montana Linux Team 
+Homepage = www.hannahmontana.sourceforge.net
+
+# Theme behaviour settings.
+Engine = KSplashX
