@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=hannah_montana
+Comment=Hannah Monatana Look and Feel
+
+X-KDE-PluginInfo-Author=The Hannah Montana Linux Project
+X-KDE-PluginInfo-Email=
+X-KDE-PluginInfo-Name=hannah_montana
+X-KDE-PluginInfo-Version=1.0
+X-KDE-PluginInfo-Website=hannahmontana.sourceforge.net
+X-KDE-PluginInfo-Category=
+X-KDE-PluginInfo-Depends=
+X-KDE-PluginInfo-License=hml
+X-KDE-PluginInfo-EnabledByDefault=true
+X-Ubuntu-Gettext-Domain=desktop_kdebase-runtime
