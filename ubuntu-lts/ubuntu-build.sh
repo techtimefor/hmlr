@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # --- 1. Configuration & Path Correction ---
-# Based on your terminal, the script runs in hmlr/ubuntu-lts/
-# So DATA_DIR is ../original_hml_data
 BASE_DIR=$(pwd)
 SOURCE_DIR="$BASE_DIR"
 BUILD_DIR="$(pwd)/../../build"
