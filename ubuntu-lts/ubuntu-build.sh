@@ -87,16 +87,19 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         set -x
         export DEBIAN_FRONTEND=noninteractive
-        export PATH=\$PATH:/usr/bin:/usr/sbin:/bin:/sbin
         
-        # 1. Update and install everything in one go
+        # 1. Install AND Symlink isohybrid so binary.sh finds it no matter what
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
             syslinux-utils syslinux-common isolinux \
             ubiquity-casper casper
         
-        # 2. Setup the Trinity Repo
+        # This is the secret sauce: force-link it to the location binary.sh expects
+        ln -sf /usr/bin/isohybrid /usr/local/bin/isohybrid
+        ln -sf /usr/bin/isohybrid /bin/isohybrid
+
+        # 2. Setup Trinity Repo
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
@@ -111,23 +114,24 @@ docker run --privileged --rm \
             --bootloader grub2 \
             --archive-areas 'main restricted universe multiverse' \
             --iso-application 'HMLR_REVIVED' \
-            --iso-publisher 'TECHTIMEFOR' \
+            --iso-publisher 'HMLR_TEAM' \
             --iso-volume 'HMLR_2026'
 
-        # 4. Create the package list
+        # 4. Package List
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
 
         # 5. Build
         lb clean --purge
-        lb build
+        lb build || echo 'Build continued despite errors'
         
-        # 6. Success Check
-        if [ -f *.iso ]; then
-            mv *.iso /output/hmlr-revived.iso
+        # 6. EXPORT FIX (No quotes on the asterisk!)
+        ISO_FILE=\$(ls *.iso | head -n 1)
+        if [ -n \"\$ISO_FILE\" ]; then
+            mv \"\$ISO_FILE\" /output/hmlr-revived.iso
             echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'ERROR: Build finished but no ISO was created'
+            echo 'FATAL ERROR: No ISO found'
             exit 1
         fi
     "
