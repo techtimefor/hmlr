@@ -86,23 +86,25 @@ docker run --privileged --rm \
     -w /build \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
+        
+        # 1. INSTALL TOOLS (The "Nuclear Option" for isohybrid)
+        apt-get update && apt-get install -y \
+            live-build curl wget gnupg squashfs-tools xorriso \
+            grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+            syslinux syslinux-utils syslinux-common isolinux \
+            ubiquity-casper casper && \
 
- # 1. INSTALL TOOLS (Ensuring all GRUB and ISO utilities are present)
-    apt-get update && apt-get install -y \
-    live-build curl wget gnupg squashfs-tools xorriso \
-    grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
-    syslinux syslinux-utils syslinux-common isolinux \
-    ubiquity-casper casper && \
+        # 2. PATH FIX (This solves the 'not found' error if it's a path issue)
+        export PATH=\$PATH:/usr/bin:/usr/sbin:/bin:/sbin
+        which isohybrid || (echo 'isohybrid still missing!' && exit 1)
 
-
-        # 2. TRINITY REPO SETUP
+        # 3. TRINITY REPO SETUP
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. LIVE-BUILD CONFIG (Hardcoded values to prevent 'invalid option' errors)
-        # Removed --bootstrap-qemu-static
+        # 4. lb config (GRUB2 + ISO-Hybrid)
         lb config \
             --mode ubuntu \
             --distribution noble \
@@ -114,20 +116,20 @@ docker run --privileged --rm \
             --iso-publisher 'TECHTIMEFOR' \
             --iso-volume 'HMLR_2026'
 
-        # 4. PACKAGE LIST
+        # 5. PACKAGE LIST
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity ubiquity-frontend-gtk' > config/package-lists/hmlr.list.chroot
 
-        # 5. BUILD
+        # 6. BUILD (Cleans old failed state and builds fresh)
         lb clean --purge
         lb build
 
-        # 6. EXPORT
+        # 7. EXPORT
         if [ -f *.iso ]; then
-            mv *.iso /output/hmlr-revived-$(date +%Y%m%d).iso
+            mv *.iso /output/hmlr-revived-\$(date +%Y%m%d).iso
             echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'ERROR: Build failed'
+            echo 'ERROR: Build failed at the final step.'
             exit 1
         fi
     "
