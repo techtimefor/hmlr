@@ -87,11 +87,13 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
 
-        # 1. INSTALL TOOLS (Ensuring all GRUB and ISO utilities are present)
-        apt-get update && apt-get install -y \
-            live-build curl wget gnupg squashfs-tools xorriso \
-            grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
-            syslinux-utils ubiquity-casper casper && \
+ # 1. INSTALL TOOLS (Ensuring all GRUB and ISO utilities are present)
+    apt-get update && apt-get install -y \
+    live-build curl wget gnupg squashfs-tools xorriso \
+    grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+    syslinux syslinux-utils syslinux-common isolinux \
+    ubiquity-casper casper && \
+
 
         # 2. TRINITY REPO SETUP
         mkdir -p config/archives
@@ -109,7 +111,7 @@ docker run --privileged --rm \
             --bootloader grub2 \
             --archive-areas 'main restricted universe multiverse' \
             --iso-application 'HMLR_REVIVED' \
-            --iso-publisher 'HMLR_TEAM' \
+            --iso-publisher 'TECHTIMEFOR' \
             --iso-volume 'HMLR_2026'
 
         # 4. PACKAGE LIST
