@@ -83,55 +83,49 @@ echo "Starting Docker Build (Using Generic Bootloader)..."
 docker run --privileged --rm \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
-    -v "$DATA_DIR:/data" \
     -w /build \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
 
-        # A. INSTALL DEPENDENCIES (The 'isohybrid' and GRUB fix)
+        # 1. INSTALL TOOLS (Ensuring all GRUB and ISO utilities are present)
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
             syslinux-utils ubiquity-casper casper && \
 
-        # B. CONFIGURE REPOS (Trinity + GPG)
+        # 2. TRINITY REPO SETUP
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # C. BRANDING & ASSETS
-        mkdir -p config/includes.chroot/etc/
-        echo 'Hannah Montana Linux Revived' > config/includes.chroot/etc/edition-release
-        
-        # D. LIVE-BUILD CONFIG (GRUB2 + ISO-HYBRID)
-        # BINARY_IMAGES=iso-hybrid is forced here
+        # 3. LIVE-BUILD CONFIG (Hardcoded values to prevent 'invalid option' errors)
+        # Removed --bootstrap-qemu-static
         lb config \
             --mode ubuntu \
-            --distribution $CODENAME \
-            --architectures $ARCH \
-            --bootstrap-qemu-static true \
+            --distribution noble \
+            --architectures amd64 \
             --binary-images iso-hybrid \
             --bootloader grub2 \
             --archive-areas 'main restricted universe multiverse' \
             --iso-application 'HMLR_REVIVED' \
-            --iso-publisher 'HMLR_TEAM'
+            --iso-publisher 'HMLR_TEAM' \
+            --iso-volume 'HMLR_2026'
 
-        # E. PACKAGE LIST
+        # 4. PACKAGE LIST
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity ubiquity-frontend-gtk' > config/package-lists/hmlr.list.chroot
 
-        # F. THE BUILD
+        # 5. BUILD
         lb clean --purge
         lb build
 
-        # G. MOVE & RENAME (Matching your example script logic)
+        # 6. EXPORT
         if [ -f *.iso ]; then
-            mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            cd /output && sha256sum hmlr-revived-$DATE_TAG.iso > hmlr-revived-$DATE_TAG.sha256
-            echo 'SUCCESS: ISO and Checksum created.'
+            mv *.iso /output/hmlr-revived-$(date +%Y%m%d).iso
+            echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'ERROR: ISO generation failed.'
+            echo 'ERROR: Build failed'
             exit 1
         fi
     "
