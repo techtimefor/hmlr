@@ -81,7 +81,6 @@ echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 echo "Starting Docker Build (Using Generic Bootloader)..."
 
 
-
 docker run --privileged --rm \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
@@ -89,22 +88,22 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         
-        # FIX: Added syslinux-utils (for isohybrid) and xorriso (for ISO creation)
+        # 1. THE FIX: Install syslinux-utils to provide the 'isohybrid' command
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             isolinux syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
         
-        # 1. Setup Trinity Repo
+        # 2. Setup Trinity Repo
         mkdir -p config/archives
         REPO_LINE='deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps'
         echo \"\$REPO_LINE\" > config/archives/trinity.list.chroot
         echo \"\$REPO_LINE\" > config/archives/trinity.list.binary
         
-        # 2. GPG Key Injection
+        # 3. GPG Key Injection
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. lb config (FORCING GENERIC ISOLINUX & ADDING ISO METADATA)
+        # 4. lb config (FORCING ISOLINUX & ADDING BOOT METADATA)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -117,18 +116,17 @@ docker run --privileged --rm \
             --bootloader isolinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 4. Package List (VLC + Trinity + Desktop Essentials)
+        # 5. Package List
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
-        # 5. Build
-        # Use lb clean to ensure no leftover lock files from the failed run
+        # 6. Execute Build
         lb clean --purge && lb build
         
-        # 6. Final Export
+        # 7. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: ISO EXPORTED TO OUTPUT FOLDER'
+            echo 'SUCCESS: ISO EXPORTED AND BOOTABLE'
         else
             echo 'FATAL ERROR: ISO build failed.'
             exit 1
