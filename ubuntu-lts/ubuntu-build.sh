@@ -12,8 +12,8 @@ DATE_TAG=$(date +%Y%m%d)
 HMLR_NAME="Hannah Montana Linux Revived"
 UBUNTU_CODENAME="noble"
 
-# --- 2. Staging & Directory Setup ---
-echo "Cleaning and staging build environment..."
+# --- 2. Staging & Permission Cleanup ---
+echo "Cleaning staging area..."
 sudo rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
@@ -30,9 +30,8 @@ mkdir -p "$CHROOT/etc/skel/.trinity/share/config" \
          "$CHROOT/usr/lib"
 
 # --- 3. Identity Files (OS-Release & LSB-Release) ---
-echo "Writing OS Identity (os-release, lsb-release)..."
+echo "Writing OS Identity..."
 
-# LSB-Release
 cat <<EOF > "$CHROOT/etc/lsb-release"
 DISTRIB_ID=HMLR
 DISTRIB_RELEASE=2026.1
@@ -40,49 +39,38 @@ DISTRIB_CODENAME=$UBUNTU_CODENAME
 DISTRIB_DESCRIPTION="$HMLR_NAME"
 EOF
 
-# OS-Release 
 cat <<EOF > "$CHROOT/etc/os-release"
 PRETTY_NAME="$HMLR_NAME (24.04 LTS)"
 NAME="$HMLR_NAME"
 VERSION_ID="2026.1"
-VERSION="2026.1 (Noble)"
 ID=hmlr
 ID_LIKE=ubuntu
-HOME_URL="https://github.com/TechTimeFor/HMLR"
-SUPPORT_URL="https://github.com/TechTimeFor/HMLR"
-BUG_REPORT_URL="https://github.com/TechTimeFor/HMLR"
-PRIVACY_POLICY_URL="https://github.com/TechTimeFor/HMLR"
-VERSION_CODENAME=$UBUNTU_CODENAME
-UBUNTU_CODENAME=$UBUNTU_CODENAME
 LOGO=hannah-montana-logo
 EOF
-
-# Copy to usr/lib as well for modern systemd compatibility
 cp "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
 
-# --- 4. Assets & Wallpaper Automation ---
-echo "Mapping Wallpapers and Assets..."
+# --- 4. Asset Mapping & Wallpaper Logic ---
+echo "Mapping Wallpapers..."
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/wallpapers/hmlr_default.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
 
-# Force Trinity to use this wallpaper by default
+# Force TDE wallpaper
 cat <<EOF > "$CHROOT/etc/skel/.trinity/share/config/kickerrc"
 [Background]
 Wallpaper=/usr/share/wallpapers/hmlr_default.png
 WallpaperMode=Scaled
 EOF
 
-# Mapping Installer Slideshow
+# Ubiquity Slideshow
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_1.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_2.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_2.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_3.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_3.png"
 
-# Setup Screenfetch auto-run
 echo "screenfetch" >> "$CHROOT/etc/skel/.bashrc"
 echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 
-# --- 5. Dockerized Build ---
-echo "Starting Docker Build Process..."
+# --- 5. Dockerized Build with GPG Bypass ---
+echo "Starting Docker Build (Addressing Key C93AF1698685AD8B)..."
 
 
 
@@ -99,10 +87,13 @@ docker run --privileged --rm \
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         
-        # 2. GPG Key Fix (Force trust so it doesn't fail on InRelease)
-        wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
+        # 2. THE NUCLEAR GPG FIX: 
+        # We fetch the key and place it directly in config/archives as a .key file.
+        # live-build will automatically import this into the chroot's trusted keys.
+        gpg --keyserver hkps://keyserver.ubuntu.com --recv-key C93AF1698685AD8B
+        gpg --export C93AF1698685AD8B > config/archives/trinity.key
 
-        # 3. Keyring Package Fix (Local installation)
+        # 3. Keyring Package (Local)
         mkdir -p config/packages.chroot
         wget http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.deb -O config/packages.chroot/trinity-keyring_all.deb
 
@@ -118,21 +109,22 @@ docker run --privileged --rm \
             --bootloader syslinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 5. Package List (Trinity + VLC + System Utilities)
+        # 5. Package List
         mkdir -p config/package-lists
         echo 'tde-trinity kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk casper network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
         # 6. Execute Build
         lb clean && lb build
         
-        # Export logic
+        # 7. Verification Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
+            echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'ERROR: ISO build failed.'
+            echo 'FATAL ERROR: ISO build failed. Check logs above.'
             exit 1
         fi
     "
 
+# Cleanup only if successful (or change to always cleanup)
 sudo rm -rf "$BUILD_DIR"
-echo "Process Complete! Your ISO is ready."
