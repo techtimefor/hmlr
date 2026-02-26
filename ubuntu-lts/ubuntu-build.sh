@@ -11,7 +11,7 @@ DATE_TAG=$(date +%Y%m%d)
 HMLR_NAME="Hannah Montana Linux Revived"
 UBUNTU_CODENAME="noble"
 
-# --- 2. Staging & Permission Cleanup ---
+# --- 2. Staging ---
 echo "Cleaning and staging build environment..."
 sudo rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
@@ -28,7 +28,7 @@ mkdir -p "$CHROOT/etc/skel/.trinity/share/config" \
          "$CHROOT/usr/share/ubiquity/pixmaps"
 
 # --- 3. IDENTITY & BRANDING ---
-echo "Writing OS Identity (os-release & lsb-release)..."
+echo "Writing OS Identity..."
 
 cat <<EOF > "$CHROOT/etc/lsb-release"
 DISTRIB_ID=HMLR
@@ -46,45 +46,43 @@ LOGO=hannah-montana-logo
 EOF
 cp "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
 
-# --- 4. ASSET MAPPING (Applying the Hannah Theme) ---
+# --- 4. ASSET MAPPING (The Hannah Customization) ---
 echo "Extracting and Mapping Hannah Montana Assets..."
 
-# Use a temporary area to unpack your data archives
 TEMP_ASSETS=$(mktemp -d)
 tar -xJf "$DATA_DIR/icons.tar.xz" -C "$TEMP_ASSETS/" 2>/dev/null
 tar -xzf "$DATA_DIR/skel.tar.gz" -C "$TEMP_ASSETS/" 2>/dev/null
 
-# Move Icons and KDM themes to Trinity system paths
-# (Adjusting paths based on typical HML data structure)
+# Map Icons and KDM Themes
 find "$TEMP_ASSETS" -type d -name "hannah_montana" -path "*/icons/*" -exec cp -r {} "$CHROOT/opt/trinity/share/icons/" \;
 find "$TEMP_ASSETS" -type d -name "hannah_montana" -path "*/kdm/themes/*" -exec cp -r {} "$CHROOT/opt/trinity/share/apps/kdm/themes/" \;
 
-# Wallpapers for System and Installer
+# Wallpapers
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/wallpapers/hmlr_default.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/pixmaps/hannah-montana-logo.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_1.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_1.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_2.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_2.png"
 cp "$DATA_DIR/wallpapers/hannah_montana_3.png" "$CHROOT/usr/share/ubiquity/pixmaps/sc_3.png"
 
-# Force the Trinity desktop to use the HML wallpaper
+# Force Wallpaper in Trinity Config
 cat <<EOF > "$CHROOT/etc/skel/.trinity/share/config/kickerrc"
 [Background]
 Wallpaper=/usr/share/wallpapers/hmlr_default.png
 WallpaperMode=Scaled
 EOF
 
-# Restore original .kde/skel settings if they exist
+# Merge original .kde skel settings if present
 KDE_SKEL=$(find "$TEMP_ASSETS" -type d -name ".kde" | head -n 1)
 [ -n "$KDE_SKEL" ] && cp -r "$KDE_SKEL/." "$CHROOT/etc/skel/.trinity/"
 
 rm -rf "$TEMP_ASSETS"
 
-# Screenfetch and Ubiquity setup
+# Extras
 echo "screenfetch" >> "$CHROOT/etc/skel/.bashrc"
 echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 
-# --- 5. DOCKERIZED BUILD (GPG & PACKAGE FIX) ---
-echo "Starting Docker Build (Addressing GPG NO_PUBKEY)..."
+# --- 5. DOCKERIZED BUILD (The Bootloader Fix) ---
+echo "Starting Docker Build (Fixing Syslinux themes)..."
 
 
 
@@ -102,38 +100,37 @@ docker run --privileged --rm \
         echo \"\$REPO_LINE\" > config/archives/trinity.list.chroot
         echo \"\$REPO_LINE\" > config/archives/trinity.list.binary
         
-        # 2. NUCLEAR GPG FIX: Inject key directly into the build's trusted store
-        # This prevents the 'Not Signed' error by trusting the key before 'apt update' runs
+        # 2. GPG Fix
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. Live-Build Configuration
+        # 3. lb config (FORCING GENERIC BOOTLOADER TO AVOID MISSING UBUNTU THEMES)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
             --parent-distribution $UBUNTU_CODENAME \
-            --parent-mirror-binary http://archive.ubuntu.com/ubuntu/ \
             --architectures amd64 \
             --binary-images iso-hybrid \
             --iso-application 'HMLR' \
+            --bootloader syslinux \
+            --syslinux-theme syslinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 4. Final Package List (Including VLC)
+        # 4. Package List (Includes VLC)
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
         # 5. Build Execution
         lb clean && lb build
         
-        # 6. Result Verification
+        # 6. Verification
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: ISO CREATED'
         else
-            echo 'FATAL ERROR: ISO build failed. Check logs above.'
+            echo 'FATAL ERROR: ISO build failed.'
             exit 1
         fi
     "
 
 sudo rm -rf "$BUILD_DIR"
-echo "Process Complete! Your Hannah Montana Linux Revived ISO is in the output folder."
+echo "Process Complete! Check your output folder for the ISO."
