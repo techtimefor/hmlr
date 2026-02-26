@@ -27,7 +27,7 @@ mkdir -p "$CHROOT/etc/skel/.trinity/share/config" \
          "$CHROOT/etc/default" \
          "$CHROOT/usr/share/ubiquity/pixmaps"
 
-# --- 3. IDENTITY & BRANDING ---
+# --- 3. IDENTITY & BRANDING (OS-Release) ---
 echo "Writing OS Identity..."
 
 cat <<EOF > "$CHROOT/etc/lsb-release"
@@ -47,7 +47,7 @@ EOF
 cp "$CHROOT/etc/os-release" "$CHROOT/usr/lib/os-release"
 
 # --- 4. ASSET MAPPING (The Hannah Customization) ---
-echo "Extracting and Mapping Hannah Montana Assets..."
+echo "Mapping Hannah Montana Assets..."
 
 TEMP_ASSETS=$(mktemp -d)
 tar -xJf "$DATA_DIR/icons.tar.xz" -C "$TEMP_ASSETS/" 2>/dev/null
@@ -71,18 +71,14 @@ Wallpaper=/usr/share/wallpapers/hmlr_default.png
 WallpaperMode=Scaled
 EOF
 
-# Merge original .kde skel settings if present
-KDE_SKEL=$(find "$TEMP_ASSETS" -type d -name ".kde" | head -n 1)
-[ -n "$KDE_SKEL" ] && cp -r "$KDE_SKEL/." "$CHROOT/etc/skel/.trinity/"
-
 rm -rf "$TEMP_ASSETS"
 
 # Extras
 echo "screenfetch" >> "$CHROOT/etc/skel/.bashrc"
 echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 
-# --- 5. DOCKERIZED BUILD (The Bootloader Fix) ---
-echo "Starting Docker Build (Fixing Syslinux themes)..."
+# --- 5. DOCKERIZED BUILD (Bootloader Bypass) ---
+echo "Starting Docker Build (Using Generic Bootloader)..."
 
 
 
@@ -94,17 +90,17 @@ docker run --privileged --rm \
         export DEBIAN_FRONTEND=noninteractive
         apt-get update && apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux ubiquity-casper casper && \
         
-        # 1. Trinity Repository Configuration
+        # 1. Setup Trinity Repo
         mkdir -p config/archives
         REPO_LINE='deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps'
         echo \"\$REPO_LINE\" > config/archives/trinity.list.chroot
         echo \"\$REPO_LINE\" > config/archives/trinity.list.binary
         
-        # 2. GPG Fix
+        # 2. GPG Key Injection
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. lb config (FORCING GENERIC BOOTLOADER TO AVOID MISSING UBUNTU THEMES)
+        # 3. lb config (FORCING GENERIC ISOLINUX TO AVOID MISSING THEMES)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -112,20 +108,20 @@ docker run --privileged --rm \
             --architectures amd64 \
             --binary-images iso-hybrid \
             --iso-application 'HMLR' \
-            --bootloader syslinux \
-            --syslinux-theme syslinux \
+            --bootloader isolinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 4. Package List (Includes VLC)
+        # 4. Package List (VLC + Trinity)
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
-        # 5. Build Execution
+        # 5. Build
         lb clean && lb build
         
-        # 6. Verification
+        # 6. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
+            echo 'SUCCESS: ISO EXPORTED'
         else
             echo 'FATAL ERROR: ISO build failed.'
             exit 1
@@ -133,4 +129,3 @@ docker run --privileged --rm \
     "
 
 sudo rm -rf "$BUILD_DIR"
-echo "Process Complete! Check your output folder for the ISO."
