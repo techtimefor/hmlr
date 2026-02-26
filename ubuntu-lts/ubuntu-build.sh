@@ -80,7 +80,6 @@ echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 # --- 5. DOCKERIZED BUILD (Bootloader Bypass) ---
 echo "Starting Docker Build (Using Generic Bootloader)..."
 
-
 docker run --privileged --rm \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
@@ -88,10 +87,11 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         
-        # 1. THE FIX: Install syslinux-utils to provide the 'isohybrid' command
+        # 1. NEW DEPENDENCIES: Added grub-pc-bin, grub-efi-amd64-bin, mtools, and dosfstools
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
-            isolinux syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
+            grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+            ubiquity-casper casper libterm-readline-gnu-perl && \
         
         # 2. Setup Trinity Repo
         mkdir -p config/archives
@@ -103,7 +103,7 @@ docker run --privileged --rm \
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 4. lb config (FORCING ISOLINUX & ADDING BOOT METADATA)
+        # 4. lb config (SWITCHED TO GRUB2)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -113,7 +113,7 @@ docker run --privileged --rm \
             --iso-application 'HMLR-Revived' \
             --iso-preparer 'HMLR-Team' \
             --iso-publisher 'HMLR-Team' \
-            --bootloader isolinux \
+            --bootloader grub2 \
             --archive-areas 'main restricted universe multiverse'
 
         # 5. Package List
@@ -126,7 +126,7 @@ docker run --privileged --rm \
         # 7. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: ISO EXPORTED AND BOOTABLE'
+            echo 'SUCCESS: GRUB2 ISO EXPORTED'
         else
             echo 'FATAL ERROR: ISO build failed.'
             exit 1
