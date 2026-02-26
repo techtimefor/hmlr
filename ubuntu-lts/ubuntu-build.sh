@@ -87,11 +87,11 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         
-        # 1. NEW DEPENDENCIES: Added grub-pc-bin, grub-efi-amd64-bin, mtools, and dosfstools
+        # 1. CORE TOOLS: Including grub binaries and mtools for EFI/Hybrid support
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
-            ubiquity-casper casper libterm-readline-gnu-perl && \
+            syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
         
         # 2. Setup Trinity Repo
         mkdir -p config/archives
@@ -103,7 +103,7 @@ docker run --privileged --rm \
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 4. lb config (SWITCHED TO GRUB2)
+        # 4. lb config (FORCING GRUB2 AND HYBRID FORMAT)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -126,7 +126,7 @@ docker run --privileged --rm \
         # 7. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: GRUB2 ISO EXPORTED'
+            echo 'SUCCESS: GRUB2 HYBRID ISO EXPORTED'
         else
             echo 'FATAL ERROR: ISO build failed.'
             exit 1
