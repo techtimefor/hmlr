@@ -88,7 +88,7 @@ docker run --privileged --rm \
         export DEBIAN_FRONTEND=noninteractive
 
  # 1. INSTALL TOOLS (Ensuring all GRUB and ISO utilities are present)
-    apt update && apt install -y \
+    apt-get update && apt-get install -y \
     live-build curl wget gnupg squashfs-tools xorriso \
     grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
     syslinux syslinux-utils syslinux-common isolinux \
