@@ -87,23 +87,20 @@ docker run --privileged --rm \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
         
-        # 1. CORE TOOLS: Including grub binaries and mtools for EFI/Hybrid support
+        # 1. INSTALL ALL BOOT TOOLS: GRUB binaries + the missing isohybrid tool
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
             syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
         
-        # 2. Setup Trinity Repo
+        # 2. Setup Trinity Repo & GPG (Required for Trinity Desktop)
         mkdir -p config/archives
-        REPO_LINE='deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps'
-        echo \"\$REPO_LINE\" > config/archives/trinity.list.chroot
-        echo \"\$REPO_LINE\" > config/archives/trinity.list.binary
-        
-        # 3. GPG Key Injection
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.binary
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 4. lb config (FORCING GRUB2 AND HYBRID FORMAT)
+        # 3. lb config: Properly configured for GRUB + ISO-Hybrid
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
@@ -116,14 +113,14 @@ docker run --privileged --rm \
             --bootloader grub2 \
             --archive-areas 'main restricted universe multiverse'
 
-        # 5. Package List
+        # 4. Package List (Includes VLC and Trinity)
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
-        # 6. Execute Build
+        # 5. Build
         lb clean --purge && lb build
         
-        # 7. Final Export
+        # 6. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
             echo 'SUCCESS: GRUB2 HYBRID ISO EXPORTED'
