@@ -81,30 +81,28 @@ echo "export UBUNTU_RELEASE='$HMLR_NAME'" > "$CHROOT/etc/default/ubiquity"
 echo "Starting Docker Build (Using Generic Bootloader)..."
 
 docker run --privileged --rm \
-    -v "$BUILD_DIR:/build" \
-    -v "$OUTPUT_DIR:/output" \
+    -v "$(pwd)/../../build:/build" \
+    -v "$(pwd)/../../output:/output" \
     -w /build \
     ubuntu:noble /bin/bash -c "
+        set -x
         export DEBIAN_FRONTEND=noninteractive
+        export PATH=\$PATH:/usr/bin:/usr/sbin:/bin:/sbin
         
-        # 1. INSTALL TOOLS (The "Nuclear Option" for isohybrid)
+        # 1. Update and install everything in one go
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
-            syslinux syslinux-utils syslinux-common isolinux \
-            ubiquity-casper casper && \
-
-        # 2. PATH FIX (This solves the 'not found' error if it's a path issue)
-        export PATH=\$PATH:/usr/bin:/usr/sbin:/bin:/sbin
-        which isohybrid || (echo 'isohybrid still missing!' && exit 1)
-
-        # 3. TRINITY REPO SETUP
+            syslinux-utils syslinux-common isolinux \
+            ubiquity-casper casper
+        
+        # 2. Setup the Trinity Repo
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 4. lb config (GRUB2 + ISO-Hybrid)
+        # 3. Configure (GRUB2 + Hybrid)
         lb config \
             --mode ubuntu \
             --distribution noble \
@@ -116,20 +114,20 @@ docker run --privileged --rm \
             --iso-publisher 'TECHTIMEFOR' \
             --iso-volume 'HMLR_2026'
 
-        # 5. PACKAGE LIST
+        # 4. Create the package list
         mkdir -p config/package-lists
-        echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity ubiquity-frontend-gtk' > config/package-lists/hmlr.list.chroot
+        echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
 
-        # 6. BUILD (Cleans old failed state and builds fresh)
+        # 5. Build
         lb clean --purge
         lb build
-
-        # 7. EXPORT
+        
+        # 6. Success Check
         if [ -f *.iso ]; then
-            mv *.iso /output/hmlr-revived-\$(date +%Y%m%d).iso
+            mv *.iso /output/hmlr-revived.iso
             echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'ERROR: Build failed at the final step.'
+            echo 'ERROR: Build finished but no ISO was created'
             exit 1
         fi
     "
