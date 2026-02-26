@@ -88,7 +88,11 @@ docker run --privileged --rm \
     -w /build \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update && apt-get install -y live-build curl wget gnupg squashfs-tools xorriso isolinux ubiquity-casper casper && \
+        
+        # FIX: Added syslinux-utils (for isohybrid) and xorriso (for ISO creation)
+        apt-get update && apt-get install -y \
+            live-build curl wget gnupg squashfs-tools xorriso \
+            isolinux syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
         
         # 1. Setup Trinity Repo
         mkdir -p config/archives
@@ -100,28 +104,31 @@ docker run --privileged --rm \
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. lb config (FORCING GENERIC ISOLINUX TO AVOID MISSING THEMES)
+        # 3. lb config (FORCING GENERIC ISOLINUX & ADDING ISO METADATA)
         lb config \
             --mode ubuntu \
             --distribution $UBUNTU_CODENAME \
             --parent-distribution $UBUNTU_CODENAME \
             --architectures amd64 \
             --binary-images iso-hybrid \
-            --iso-application 'HMLR' \
+            --iso-application 'HMLR-Revived' \
+            --iso-preparer 'HMLR-Team' \
+            --iso-publisher 'HMLR-Team' \
             --bootloader isolinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 4. Package List (VLC + Trinity)
+        # 4. Package List (VLC + Trinity + Desktop Essentials)
         mkdir -p config/package-lists
         echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
 
         # 5. Build
-        lb clean && lb build
+        # Use lb clean to ensure no leftover lock files from the failed run
+        lb clean --purge && lb build
         
         # 6. Final Export
         if ls *.iso 1> /dev/null 2>&1; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: ISO EXPORTED'
+            echo 'SUCCESS: ISO EXPORTED TO OUTPUT FOLDER'
         else
             echo 'FATAL ERROR: ISO build failed.'
             exit 1
