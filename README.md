@@ -17,10 +17,9 @@ Check releases for latest iso avaliable or you can manually build it following t
 
 ## Credits 
 
-[The Original](https://hannahmontana.sourceforge.net/)
+[Hannah Montana Linux](https://hannahmontana.sourceforge.net/)
 
 [Ubuntu](https://ubuntu.com)
 
 [Debian](https://debian.org)
 
-[Me](https://github.com/techtimefor)
