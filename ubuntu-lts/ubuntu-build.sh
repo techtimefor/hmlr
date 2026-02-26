@@ -83,49 +83,55 @@ echo "Starting Docker Build (Using Generic Bootloader)..."
 docker run --privileged --rm \
     -v "$BUILD_DIR:/build" \
     -v "$OUTPUT_DIR:/output" \
+    -v "$DATA_DIR:/data" \
     -w /build \
     ubuntu:noble /bin/bash -c "
         export DEBIAN_FRONTEND=noninteractive
-        
-        # 1. INSTALL ALL BOOT TOOLS: GRUB binaries + the missing isohybrid tool
+
+        # A. INSTALL DEPENDENCIES (The 'isohybrid' and GRUB fix)
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
-            syslinux-utils ubiquity-casper casper libterm-readline-gnu-perl && \
-        
-        # 2. Setup Trinity Repo & GPG (Required for Trinity Desktop)
+            syslinux-utils ubiquity-casper casper && \
+
+        # B. CONFIGURE REPOS (Trinity + GPG)
         mkdir -p config/archives
         echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
-        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.binary
         wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
         cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 3. lb config: Properly configured for GRUB + ISO-Hybrid
+        # C. BRANDING & ASSETS
+        mkdir -p config/includes.chroot/etc/
+        echo 'Hannah Montana Linux Revived' > config/includes.chroot/etc/edition-release
+        
+        # D. LIVE-BUILD CONFIG (GRUB2 + ISO-HYBRID)
+        # BINARY_IMAGES=iso-hybrid is forced here
         lb config \
             --mode ubuntu \
-            --distribution $UBUNTU_CODENAME \
-            --parent-distribution $UBUNTU_CODENAME \
-            --architectures amd64 \
+            --distribution $CODENAME \
+            --architectures $ARCH \
+            --bootstrap-qemu-static true \
             --binary-images iso-hybrid \
-            --iso-application 'HMLR-Revived' \
-            --iso-preparer 'HMLR-Team' \
-            --iso-publisher 'HMLR-Team' \
             --bootloader grub2 \
-            --archive-areas 'main restricted universe multiverse'
+            --archive-areas 'main restricted universe multiverse' \
+            --iso-application 'HMLR_REVIVED' \
+            --iso-publisher 'HMLR_TEAM'
 
-        # 4. Package List (Includes VLC and Trinity)
+        # E. PACKAGE LIST
         mkdir -p config/package-lists
-        echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity screenfetch vlc ubiquity ubiquity-frontend-gtk network-manager xserver-xorg' > config/package-lists/hmlr.list.chroot
+        echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity ubiquity-frontend-gtk' > config/package-lists/hmlr.list.chroot
 
-        # 5. Build
-        lb clean --purge && lb build
-        
-        # 6. Final Export
-        if ls *.iso 1> /dev/null 2>&1; then
+        # F. THE BUILD
+        lb clean --purge
+        lb build
+
+        # G. MOVE & RENAME (Matching your example script logic)
+        if [ -f *.iso ]; then
             mv *.iso /output/hmlr-revived-$DATE_TAG.iso
-            echo 'SUCCESS: GRUB2 HYBRID ISO EXPORTED'
+            cd /output && sha256sum hmlr-revived-$DATE_TAG.iso > hmlr-revived-$DATE_TAG.sha256
+            echo 'SUCCESS: ISO and Checksum created.'
         else
-            echo 'FATAL ERROR: ISO build failed.'
+            echo 'ERROR: ISO generation failed.'
             exit 1
         fi
     "
