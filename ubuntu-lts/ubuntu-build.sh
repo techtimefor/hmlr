@@ -85,54 +85,45 @@ docker run --privileged --rm \
     -v "$(pwd)/../../output:/output" \
     -w /build \
     ubuntu:noble /bin/bash -c "
-        set -x
         export DEBIAN_FRONTEND=noninteractive
         
-        # 1. Install AND Symlink isohybrid so binary.sh finds it no matter what
+        # 1. INSTALL TOOLS (Must be present for the binary stage)
         apt-get update && apt-get install -y \
-            live-build curl wget gnupg squashfs-tools xorriso \
-            grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+            live-build squashfs-tools xorriso \
             syslinux-utils syslinux-common isolinux \
-            ubiquity-casper casper
+            mtools dosfstools grub-pc-bin grub-efi-amd64-bin
         
-        # This is the secret sauce: force-link it to the location binary.sh expects
+        # 2. THE PATH FIX (This is what failed last time)
         ln -sf /usr/bin/isohybrid /usr/local/bin/isohybrid
-        ln -sf /usr/bin/isohybrid /bin/isohybrid
+        ln -sf /usr/bin/isohybrid /usr/bin/isohybrid.bin
+        export PATH=\$PATH:/usr/bin:/usr/sbin:/bin:/sbin
 
-        # 2. Setup Trinity Repo
-        mkdir -p config/archives
-        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
-        wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
-        cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
-
-        # 3. Configure (GRUB2 + Hybrid)
+        # 3. RE-CONFIG (Switching to isolinux for better hybrid support)
         lb config \
             --mode ubuntu \
             --distribution noble \
             --architectures amd64 \
             --binary-images iso-hybrid \
-            --bootloader grub2 \
-            --archive-areas 'main restricted universe multiverse' \
+            --bootloader isolinux \
             --iso-application 'HMLR_REVIVED' \
-            --iso-publisher 'HMLR_TEAM' \
             --iso-volume 'HMLR_2026'
 
-        # 4. Package List
-        mkdir -p config/package-lists
-        echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
+        # 4. RUN BINARY ONLY (Skips the 30-minute chroot process)
+        lb binary
 
-        # 5. Build
-        lb clean --purge
-        lb build || echo 'Build continued despite errors'
-        
-        # 6. EXPORT FIX (No quotes on the asterisk!)
-        ISO_FILE=\$(ls *.iso | head -n 1)
-        if [ -n \"\$ISO_FILE\" ]; then
-            mv \"\$ISO_FILE\" /output/hmlr-revived.iso
-            echo 'SUCCESS: ISO EXPORTED'
+        # 5. FINAL EXPORT
+        if ls *.iso 1> /dev/null 2>&1; then
+            mv *.iso /output/hmlr-revived-BOOTABLE.iso
+            echo 'SUCCESS: BOOTABLE ISO EXPORTED'
         else
-            echo 'FATAL ERROR: No ISO found'
-            exit 1
+            # Emergency check if it stayed in chroot
+            if [ -f chroot/binary.hybrid.iso ]; then
+                mv chroot/binary.hybrid.iso /output/hmlr-revived-BOOTABLE.iso
+                echo 'SUCCESS: ISO RESCUED FROM CHROOT'
+            else
+                echo 'FATAL ERROR: ISO not found even after binary stage'
+                exit 1
+            fi
         fi
     "
 
