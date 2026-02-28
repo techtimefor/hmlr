@@ -15,14 +15,17 @@ docker build -t hmlr-v4-builder .
 ```
 
 ```sh
-# Create a folder for the finished packages
+# Create a local directory for the files
 mkdir -p ./finished_debs
-```
 
-```sh
+# Create a temporary container instance (it won't run, just exist)
+docker create --name hml-temp hmlr-v4-builder
 
-# Run a temporary container to copy the files out
-docker run --rm -v $(pwd)/finished_debs:/out hmlr-v4-builder bash -c "cp /*.deb /out/"
+# Copy ALL .deb files from the root of the container to your local folder
+docker cp hml-temp:/. ./finished_debs/
+
+# Clean up the temporary container
+docker rm hml-temp
 ```
 
 Building the ISO
