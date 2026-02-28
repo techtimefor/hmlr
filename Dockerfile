@@ -1,4 +1,3 @@
-ckerfile
 # --- STAGE 0: BASE ---
 FROM ubuntu:noble AS base
 ENV DEBIAN_FRONTEND=noninteractive
