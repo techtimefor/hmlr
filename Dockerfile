@@ -1,10 +1,20 @@
+ckerfile
 # --- STAGE 0: BASE ---
 FROM ubuntu:noble AS base
 ENV DEBIAN_FRONTEND=noninteractive
-RUN dpkg --add-architecture s390x && \
-    sed -i 's/^deb/deb [arch=amd64]/' /etc/apt/sources.list && \
-    echo "deb [arch=s390x] http://ports.ubuntu.com/ubuntu-ports noble main universe" > /etc/apt/sources.list.d/s390x.list && \
-    apt-get update && apt-get install -y \
+
+# 1. Enable s390x architecture
+RUN dpkg --add-architecture s390x
+
+# 2. Update sources.list to be ARCH-SPECIFIC
+# This prevents the 404s by telling apt exactly where to find each arch
+RUN sed -i 's/^deb http/deb [arch=amd64] http/' /etc/apt/sources.list && \
+    echo "deb [arch=s390x] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse" > /etc/apt/sources.list.d/s390x.list && \
+    echo "deb [arch=s390x] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse" >> /etc/apt/sources.list.d/s390x.list && \
+    echo "deb [arch=s390x] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse" >> /etc/apt/sources.list.d/s390x.list
+
+# 3. Standard update and tool install
+RUN apt-get update && apt-get install -y \
     git build-essential cmake crossbuild-essential-s390x \
     debhelper devscripts pkg-config-s390x tar xz-utils
 
