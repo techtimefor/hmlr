@@ -8,26 +8,6 @@ Check releases for latest iso avaliable or you can manually build it following t
 
 ## Building Process
 
-Building Katana (hml customizations added)
-
-```sh
-docker build -t hmlr-v4-builder .
-```
-
-```sh
-# Create a local directory for the files
-mkdir -p ./finished_debs
-
-# Create a temporary container instance (it won't run, just exist)
-docker create --name hml-temp hmlr-v4-builder
-
-# Copy ALL .deb files from the root of the container to your local folder
-docker cp hml-temp:/. ./finished_debs/
-
-# Clean up the temporary container
-docker rm hml-temp
-```
-
 Building the ISO
 
 > DO NOT RUN THE SCRIPT AS ROOT OR SUDO YOURSELF
