@@ -2,8 +2,9 @@
 FROM ubuntu:noble AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install core build tools
-RUN apt-get update && apt-get install -y \
+# Enable source repositories so build-dep can find dependencies
+RUN sed -i 's/^#\s*deb-src/deb-src/g' /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get update && apt-get install -y \
     git build-essential cmake \
     debhelper devscripts pkg-config tar xz-utils
 
