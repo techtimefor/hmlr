@@ -75,13 +75,18 @@ docker run --privileged --rm \
       syslinux-utils syslinux-common isolinux calamares \
       mtools dosfstools genisoimage
 
-    # 2. FIX TRINITY REPO & GPG (The Noble Way)
+# --- FIXED GPG BLOCK FOR NOBLE ---
     mkdir -p config/archives
-    echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
+    echo "deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps" > config/archives/trinity.list.chroot
+
+    # Try to pull directly from the keyserver and de-armor it
+    # This is the most compatible way for Ubuntu 24.04
+    gpg --no-default-keyring --keyring /tmp/trinity_temp.gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys C93AF1698685AD8B
+    gpg --no-default-keyring --keyring /tmp/trinity_temp.gpg --export --output config/archives/trinity.key.chroot
     
-    # Download and De-armor the key (Mandatory for Ubuntu 24.04)
-    wget -qO- http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg | gpg --dearmor > config/archives/trinity.key.chroot
+    # Ensure the binary key is also ready for the live system
     cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
+    rm /tmp/trinity_temp.gpg
 
     # 3. SURGICAL PATCH: Binary.sh Overwrite
     # This ensures the ISO is hybrid-compatible for USB booting
