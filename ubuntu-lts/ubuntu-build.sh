@@ -68,35 +68,37 @@ docker run --privileged --rm \
         set -x
         export DEBIAN_FRONTEND=noninteractive
         
-        # 1. Install Toolchain (xorriso is the heavy lifter here)
+        # 1. Essential Tooling
         apt-get update && apt-get install -y \
             live-build curl wget gnupg squashfs-tools xorriso \
             syslinux-utils syslinux-common isolinux \
             mtools dosfstools grub-common
 
-        # 2. THE SURGICAL OVERWRITE: Docker-Safe version
-        # We place it in 'scripts/' but we also ensure 'config/binary' is set
+        # 2. THE STABLE SYMLINKS (Secret Sauce)
+        ln -sf /usr/bin/isohybrid /usr/local/bin/isohybrid
+        ln -sf /usr/bin/isohybrid /bin/isohybrid
+
+        # 3. THE GPG FIX (Corrected to Noble format)
+        mkdir -p config/archives
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
+        
+        # Pulling the key and forcing dearmor so it's not 'ignored' by Noble
+        wget -qO- 'https://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg' | gpg --dearmor > config/archives/trinity.key.chroot
+        cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
+
+        # 4. SURGICAL OVERWRITE (Inside Docker)
         mkdir -p scripts
         cat <<'INNEREOF' > scripts/binary.sh
 #!/bin/bash
 set -e
-echo '--- HMLR SURGICAL ISO BYPASS STARTING ---'
-# Manual sequence to ensure Noble doesn't hang on lb binary_iso
+echo 'RUNNING HMLR PATCHED BINARY SCRIPT...'
 lb binary_linux-image
 lb binary_syslinux
-# Force isohybrid to find the binary in the Docker path
-export PATH=\$PATH:/usr/bin:/usr/sbin
 lb binary_iso
 INNEREOF
         chmod +x scripts/binary.sh
 
-        # 3. TRINITY GPG FIX (Noble-specific binary export)
-        mkdir -p config/archives
-        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
-        wget -qO- 'https://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg' | gpg --dearmor > config/archives/trinity.key.chroot
-        cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
-
-        # 4. CONFIG
+        # 5. CONFIG
         lb config \
             --mode ubuntu \
             --distribution noble \
@@ -105,23 +107,22 @@ INNEREOF
             --bootloader isolinux \
             --archive-areas 'main restricted universe multiverse'
 
-        # 5. PACKAGE LIST
+        # 6. PACKAGE LIST
         mkdir -p config/package-lists
         echo 'tde-trinity tde-style-plastik-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
 
-        # 6. THE BUILD
+        # 7. THE BUILD
         lb clean --purge
-        # Running our overwritten script logic
-        ./scripts/binary.sh || lb build
+        # Use the surgical script to drive the binary stage
+        lb build || ./scripts/binary.sh
 
-        # 7. THE RESCUE EXPORT
-        # Search everywhere for the .iso since manual binary scripts move it around
-        ISO_PATH=\$(find . -name '*.iso' | head -n 1)
-        if [ -n \"\$ISO_PATH\" ]; then
-            mv \"\$ISO_PATH\" /output/hmlr-v4-revived.iso
-            echo \"SUCCESS: ISO EXPORTED FROM \$ISO_PATH\"
+        # 8. EXPORT (Rescue Logic)
+        ISO_FILE=\$(find . -maxdepth 2 -name '*.iso' | head -n 1)
+        if [ -n \"\$ISO_FILE\" ]; then
+            mv \"\$ISO_FILE\" /output/hmlr-v4-revived.iso
+            echo 'SUCCESS: ISO EXPORTED'
         else
-            echo 'FATAL ERROR: Overwritten binary script failed to produce ISO'
+            echo 'FATAL ERROR: Build failed to generate ISO'
             exit 1
         fi
     "
