@@ -61,70 +61,67 @@ EOF
 
 # --- 6. DOCKERIZED BUILD WITH GPG FIX ---
 docker run --privileged --rm \
-  -v "$BUILD_DIR:/build" \
-  -v "$OUTPUT_DIR:/output" \
-  -v "$DATA_DIR:/data" \
-  -w /build \
-  ubuntu:noble /bin/bash -c "
-    set -e
-    export DEBIAN_FRONTEND=noninteractive
+    -v "$(pwd)/../../build:/build" \
+    -v "$(pwd)/../../output:/output" \
+    -w /build \
+    ubuntu:noble /bin/bash -c "
+        set -x
+        export DEBIAN_FRONTEND=noninteractive
+        
+        # 1. Install Toolchain (xorriso is the heavy lifter here)
+        apt-get update && apt-get install -y \
+            live-build curl wget gnupg squashfs-tools xorriso \
+            syslinux-utils syslinux-common isolinux \
+            mtools dosfstools grub-common
 
-    # 1. Install Build Tools
-    apt-get update && apt-get install -y \
-      live-build curl wget gnupg squashfs-tools xorriso \
-      syslinux-utils syslinux-common isolinux calamares \
-      mtools dosfstools genisoimage
-
-# --- FIXED GPG BLOCK FOR NOBLE ---
-    mkdir -p config/archives
-    echo "deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps" > config/archives/trinity.list.chroot
-
-    # Try to pull directly from the keyserver and de-armor it
-    # This is the most compatible way for Ubuntu 24.04
-    gpg --no-default-keyring --keyring /tmp/trinity_temp.gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys C93AF1698685AD8B
-    gpg --no-default-keyring --keyring /tmp/trinity_temp.gpg --export --output config/archives/trinity.key.chroot
-    
-    # Ensure the binary key is also ready for the live system
-    cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
-    rm /tmp/trinity_temp.gpg
-
-    # 3. SURGICAL PATCH: Binary.sh Overwrite
-    # This ensures the ISO is hybrid-compatible for USB booting
-    mkdir -p scripts
-    cat <<'INNEREOF' > scripts/binary.sh
-#!/bin/sh
-echo 'RUNNING HMLR PATCHED BINARY SCRIPT...'
+        # 2. THE SURGICAL OVERWRITE: Docker-Safe version
+        # We place it in 'scripts/' but we also ensure 'config/binary' is set
+        mkdir -p scripts
+        cat <<'INNEREOF' > scripts/binary.sh
+#!/bin/bash
+set -e
+echo '--- HMLR SURGICAL ISO BYPASS STARTING ---'
+# Manual sequence to ensure Noble doesn't hang on lb binary_iso
 lb binary_linux-image
 lb binary_syslinux
+# Force isohybrid to find the binary in the Docker path
+export PATH=\$PATH:/usr/bin:/usr/sbin
 lb binary_iso
 INNEREOF
-    chmod +x scripts/binary.sh
+        chmod +x scripts/binary.sh
 
-    # 4. Configure Live-Build
-    lb config \
-      --mode ubuntu \
-      --distribution noble \
-      --binary-images iso-hybrid \
-      --architectures amd64 \
-      --linux-flavours generic \
-      --archive-areas 'main restricted universe multiverse'
+        # 3. TRINITY GPG FIX (Noble-specific binary export)
+        mkdir -p config/archives
+        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
+        wget -qO- 'https://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg' | gpg --dearmor > config/archives/trinity.key.chroot
+        cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-    # 5. Package List: Trinity + Calamares + Plastik Theme
-    mkdir -p config/package-lists
-    echo 'tde-trinity tde-style-plastik-trinity calamares calamares-settings-ubuntu vlc' > config/package-lists/hmlr.list.chroot
+        # 4. CONFIG
+        lb config \
+            --mode ubuntu \
+            --distribution noble \
+            --architectures amd64 \
+            --binary-images iso-hybrid \
+            --bootloader isolinux \
+            --archive-areas 'main restricted universe multiverse'
 
-    # 6. Execute Build
-    lb clean --purge
-    lb build
+        # 5. PACKAGE LIST
+        mkdir -p config/package-lists
+        echo 'tde-trinity tde-style-plastik-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
 
-    # 7. Dynamic Export Logic
-    # Find the generated ISO and move it to the mounted output folder
-    ISO_FILE=\$(ls *.iso 2>/dev/null | head -n 1)
-    if [ -n \"\$ISO_FILE\" ]; then
-        mv \"\$ISO_FILE\" /output/hmlr-v4-trinity.iso
-        echo 'SUCCESS: ISO EXPORTED TO OUTPUT FOLDER'
-    else
-        echo 'FATAL ERROR: Build completed but no ISO found'
-        exit 1
-    fi
-"
+        # 6. THE BUILD
+        lb clean --purge
+        # Running our overwritten script logic
+        ./scripts/binary.sh || lb build
+
+        # 7. THE RESCUE EXPORT
+        # Search everywhere for the .iso since manual binary scripts move it around
+        ISO_PATH=\$(find . -name '*.iso' | head -n 1)
+        if [ -n \"\$ISO_PATH\" ]; then
+            mv \"\$ISO_PATH\" /output/hmlr-v4-revived.iso
+            echo \"SUCCESS: ISO EXPORTED FROM \$ISO_PATH\"
+        else
+            echo 'FATAL ERROR: Overwritten binary script failed to produce ISO'
+            exit 1
+        fi
+    "
