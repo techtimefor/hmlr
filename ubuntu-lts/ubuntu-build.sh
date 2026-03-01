@@ -60,6 +60,7 @@ sidebarText:        "#FFFFFF"
 EOF
 
 # --- 6. DOCKERIZED BUILD WITH GPG FIX ---
+# --- 6. DOCKERIZED BUILD WITH HARDENED GPG LOGIC ---
 docker run --privileged --rm \
   -v "$BUILD_DIR:/build" \
   -v "$OUTPUT_DIR:/output" \
@@ -72,17 +73,15 @@ docker run --privileged --rm \
       syslinux-utils syslinux-common isolinux mtools \
       dosfstools genisoimage
 
-    # FIXING THE GPG ERROR (NO_PUBKEY C93AF1698685AD8B)
+    # --- THE GPG FIX: DEARMORING THE KEY ---
     mkdir -p config/archives
     echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
     
-    # Manually download the keyring .deb and extract the key
-    wget http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.deb
-    dpkg -x trinity-keyring.deb /tmp/keyring
-    cp /tmp/keyring/usr/share/keyrings/trinity-archive-keyring.gpg config/archives/trinity.key.chroot
+    # Download and convert to binary .gpg (Noble won't accept the ASCII version)
+    wget -qO- http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg | gpg --dearmor > config/archives/trinity.key.chroot
     cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-    # Configure Live-Build
+    # --- LIVE-BUILD CONFIG ---
     lb config \
       --mode ubuntu \
       --distribution noble \
@@ -91,11 +90,18 @@ docker run --privileged --rm \
       --archive-areas 'main restricted universe multiverse'
 
     # Package List (Trinity + Calamares)
-    echo 'tde-trinity calamares calamares-settings-ubuntu vlc' > config/package-lists/hmlr.list.chroot
+    echo 'tde-trinity tde-style-plastik-trinity calamares calamares-settings-ubuntu vlc' > config/package-lists/hmlr.list.chroot
 
-    # Build the ISO
+    # Run the Build
     lb build
 
-    # Move result to output
-    mv *.iso /output/hmlr-v4-trinity.iso || echo 'Build Failed'
+    # --- DYNAMIC EXPORT: Find the ISO regardless of name ---
+    ISO_FILE=\$(ls *.iso 2>/dev/null | head -n 1)
+    if [ -n \"\$ISO_FILE\" ]; then
+        mv \"\$ISO_FILE\" /output/hmlr-v4-trinity.iso
+        echo 'SUCCESS: ISO exported to output folder'
+    else
+        echo 'FATAL: Build finished but no ISO was created'
+        exit 1
+    fi
 "
