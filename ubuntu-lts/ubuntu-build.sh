@@ -60,69 +60,60 @@ sidebarText:        "#FFFFFF"
 EOF
 
 # --- 6. DOCKERIZED BUILD WITH GPG FIX ---
+echo "Starting Docker Build with surgical script patch..."
 docker run --privileged --rm \
-    -v "$(pwd)/../../build:/build" \
-    -v "$(pwd)/../../output:/output" \
-    -w /build \
-    ubuntu:noble /bin/bash -c "
-        set -x
-        export DEBIAN_FRONTEND=noninteractive
-        
-        # 1. Essential Tooling
-        apt-get update && apt-get install -y \
-            live-build curl wget gnupg squashfs-tools xorriso \
-            syslinux-utils syslinux-common isolinux \
-            mtools dosfstools grub-common
+  -v "$(pwd)/../../build:/build" \
+  -v "$(pwd)/../../output:/output" \
+  -w /build \
+  ubuntu:noble /bin/bash -c "
+    export DEBIAN_FRONTEND=noninteractive
+    
+    # 1. Prepare Environment & Fix Paths
+    apt-get update && apt-get install -y \
+      live-build curl wget gnupg squashfs-tools xorriso \
+      syslinux-utils syslinux-common isolinux \
+      mtools dosfstools genisoimage
 
-        # 2. THE STABLE SYMLINKS (Secret Sauce)
-        ln -sf /usr/bin/isohybrid /usr/local/bin/isohybrid
-        ln -sf /usr/bin/isohybrid /bin/isohybrid
-
-        # 3. THE GPG FIX (Corrected to Noble format)
-        mkdir -p config/archives
-        echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
-        
-        # Pulling the key and forcing dearmor so it's not 'ignored' by Noble
-        wget -qO- 'https://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg' | gpg --dearmor > config/archives/trinity.key.chroot
-        cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
-
-        # 4. SURGICAL OVERWRITE (Inside Docker)
-        mkdir -p scripts
-        cat <<'INNEREOF' > scripts/binary.sh
-#!/bin/bash
-set -e
-echo 'RUNNING HMLR PATCHED BINARY SCRIPT...'
-lb binary_linux-image
-lb binary_syslinux
-lb binary_iso
+    # 2. OVERWRITE THE TROUBLEMAKER binary.sh
+    cat <<'INNEREOF' > /build/binary.sh
+#!/bin/sh
+echo 'RUNNING PATCHED BINARY.SH...'
+genisoimage -J -l -cache-inodes -allow-multidot \
+  -A \"HMLR_REVIVED\" \
+  -p \"live-build 3.0\" \
+  -publisher \"HMLR Project\" \
+  -V \"HMLR_2026\" \
+  -o binary.hybrid.iso binary
+isohybrid binary.hybrid.iso
 INNEREOF
-        chmod +x scripts/binary.sh
+    chmod +x /build/binary.sh
 
-        # 5. CONFIG
-        lb config \
-            --mode ubuntu \
-            --distribution noble \
-            --architectures amd64 \
-            --binary-images iso-hybrid \
-            --bootloader isolinux \
-            --archive-areas 'main restricted universe multiverse'
+    # 3. Trinity Repo Setup (Original Stable Logic)
+    mkdir -p config/archives
+    echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
+    wget -qO- 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC93AF1698685AD8B' | gpg --dearmor > config/archives/trinity.key.chroot
+    cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-        # 6. PACKAGE LIST
-        mkdir -p config/package-lists
-        echo 'tde-trinity tde-style-plastik-trinity vlc screenfetch ubiquity' > config/package-lists/hmlr.list.chroot
+    # 4. Config & Package Lists
+    lb config \
+      --mode ubuntu \
+      --distribution noble \
+      --binary-images iso-hybrid \
+      --bootloader isolinux \
+      --archive-areas 'main restricted universe multiverse'
+    
+    mkdir -p config/package-lists
+    echo 'kubuntu-default-settings-trinity kubuntu-desktop-trinity ubiquity vlc' > config/package-lists/hmlr.list.chroot
 
-        # 7. THE BUILD
-        lb clean --purge
-        # Use the surgical script to drive the binary stage
-        lb build || ./scripts/binary.sh
+    # 5. Execute Build
+    lb build
 
-        # 8. EXPORT (Rescue Logic)
-        ISO_FILE=\$(find . -maxdepth 2 -name '*.iso' | head -n 1)
-        if [ -n \"\$ISO_FILE\" ]; then
-            mv \"\$ISO_FILE\" /output/hmlr-v4-revived.iso
-            echo 'SUCCESS: ISO EXPORTED'
-        else
-            echo 'FATAL ERROR: Build failed to generate ISO'
-            exit 1
-        fi
-    "
+    # 6. Export Results
+    if [ -f binary.hybrid.iso ]; then
+        mv binary.hybrid.iso /output/hmlr-revived-V4.iso
+        echo 'SUCCESS: ISO EXPORTED TO OUTPUT FOLDER'
+    else
+        echo 'FATAL ERROR: Build failed to produce ISO'
+        exit 1
+    fi
+"
