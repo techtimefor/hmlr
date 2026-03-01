@@ -60,48 +60,66 @@ sidebarText:        "#FFFFFF"
 EOF
 
 # --- 6. DOCKERIZED BUILD WITH GPG FIX ---
-# --- 6. DOCKERIZED BUILD WITH HARDENED GPG LOGIC ---
 docker run --privileged --rm \
   -v "$BUILD_DIR:/build" \
   -v "$OUTPUT_DIR:/output" \
   -v "$DATA_DIR:/data" \
   -w /build \
   ubuntu:noble /bin/bash -c "
+    set -e
     export DEBIAN_FRONTEND=noninteractive
+
+    # 1. Install Build Tools
     apt-get update && apt-get install -y \
       live-build curl wget gnupg squashfs-tools xorriso \
-      syslinux-utils syslinux-common isolinux mtools \
-      dosfstools genisoimage
+      syslinux-utils syslinux-common isolinux calamares \
+      mtools dosfstools genisoimage
 
-    # --- THE GPG FIX: DEARMORING THE KEY ---
+    # 2. FIX TRINITY REPO & GPG (The Noble Way)
     mkdir -p config/archives
     echo 'deb http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-r14.1.x noble main deps' > config/archives/trinity.list.chroot
     
-    # Download and convert to binary .gpg (Noble won't accept the ASCII version)
+    # Download and De-armor the key (Mandatory for Ubuntu 24.04)
     wget -qO- http://mirror.ppa.trinitydesktop.org/trinity/deb/trinity-keyring.gpg | gpg --dearmor > config/archives/trinity.key.chroot
     cp config/archives/trinity.key.chroot config/archives/trinity.key.binary
 
-    # --- LIVE-BUILD CONFIG ---
+    # 3. SURGICAL PATCH: Binary.sh Overwrite
+    # This ensures the ISO is hybrid-compatible for USB booting
+    mkdir -p scripts
+    cat <<'INNEREOF' > scripts/binary.sh
+#!/bin/sh
+echo 'RUNNING HMLR PATCHED BINARY SCRIPT...'
+lb binary_linux-image
+lb binary_syslinux
+lb binary_iso
+INNEREOF
+    chmod +x scripts/binary.sh
+
+    # 4. Configure Live-Build
     lb config \
       --mode ubuntu \
       --distribution noble \
       --binary-images iso-hybrid \
       --architectures amd64 \
+      --linux-flavours generic \
       --archive-areas 'main restricted universe multiverse'
 
-    # Package List (Trinity + Calamares)
+    # 5. Package List: Trinity + Calamares + Plastik Theme
+    mkdir -p config/package-lists
     echo 'tde-trinity tde-style-plastik-trinity calamares calamares-settings-ubuntu vlc' > config/package-lists/hmlr.list.chroot
 
-    # Run the Build
+    # 6. Execute Build
+    lb clean --purge
     lb build
 
-    # --- DYNAMIC EXPORT: Find the ISO regardless of name ---
+    # 7. Dynamic Export Logic
+    # Find the generated ISO and move it to the mounted output folder
     ISO_FILE=\$(ls *.iso 2>/dev/null | head -n 1)
     if [ -n \"\$ISO_FILE\" ]; then
         mv \"\$ISO_FILE\" /output/hmlr-v4-trinity.iso
-        echo 'SUCCESS: ISO exported to output folder'
+        echo 'SUCCESS: ISO EXPORTED TO OUTPUT FOLDER'
     else
-        echo 'FATAL: Build finished but no ISO was created'
+        echo 'FATAL ERROR: Build completed but no ISO found'
         exit 1
     fi
 "
